@@ -10262,15 +10262,17 @@ float Unit::GetAttackDistance(Unit const* pl) const
 
     uint32 playerlevel = pl->GetLevelForTarget(this);
     uint32 creaturelevel = GetLevelForTarget(pl);
-
+    CreatureData& data = sObjectMgr.NewOrExistCreatureData(GetGUIDLow());
+    uint32 spawndist = data.spawndist;
     int32 leveldif = int32(playerlevel) - int32(creaturelevel);
 
     // "The maximum Aggro Radius has a cap of 25 levels under. Example: A level 30 char has the same Aggro Radius of a level 5 char on a level 60 mob."
     if (leveldif < -25)
         leveldif = -25;
 
-    // "The aggro radius of a mob having the same level as the player is roughly 20 yards"
-    float RetDistance = 20;
+    // "The aggro radius of a mob having the same level as the player is roughly 20 yards" - Adding spawndist value to this to be able to modify Aggro range
+    float RetDistance = 20 + spawndist;
+
 
     // "Aggro Radius varies with level difference at a rate of roughly 1 yard/level"
     // radius grow if playlevel < creaturelevel
