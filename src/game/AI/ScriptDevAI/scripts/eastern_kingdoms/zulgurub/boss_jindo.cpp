@@ -70,8 +70,8 @@ struct boss_jindoAI : public ScriptedAI
 
     void Reset() override
     {
-        m_uiBrainWashTotemTimer     = 20000;
-        m_uiHealingWardTimer        = 16000;
+        m_uiBrainWashTotemTimer     = 15000;
+        m_uiHealingWardTimer        = 21000;
         m_uiHexTimer                = 8000;
         m_uiDelusionsTimer          = 10000;
         m_uiTeleportTimer           = 5000;
@@ -85,7 +85,7 @@ struct boss_jindoAI : public ScriptedAI
     void SummonedCreatureJustDied(Creature* pSummoned) override
     {
         if (pSummoned->GetEntry() == NPC_POWERFULL_HEALING_WARD)
-            m_uiHealingWardTimer = 15000;                   // how long delay?
+            m_uiHealingWardTimer = 20000;                   // how long delay?
     }
 
     void UpdateAI(const uint32 uiDiff) override
@@ -97,7 +97,7 @@ struct boss_jindoAI : public ScriptedAI
         if (m_uiBrainWashTotemTimer < uiDiff)
         {
             if (DoCastSpellIfCan(m_creature, SPELL_BRAINWASH_TOTEM) == CAST_OK)
-                m_uiBrainWashTotemTimer = urand(18000, 26000);
+                m_uiBrainWashTotemTimer = urand(13000, 17000);
         }
         else
             m_uiBrainWashTotemTimer -= uiDiff;
