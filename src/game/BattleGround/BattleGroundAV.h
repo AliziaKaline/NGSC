@@ -26,7 +26,7 @@
 
 #define BG_AV_BOSS_KILL_QUEST_SPELL         23658
 
-#define BG_AV_CAPTIME                       240000          // 4 minutes
+#define BG_AV_CAPTIME                       300000          // ANCIEN 4 minutes NOUVEAU 5 minutes
 #define BG_AV_SNOWFALL_FIRSTCAP             300000          // 5 minutes but i also have seen 4:05
 
 #define BG_AV_SCORE_INITIAL_POINTS          600
@@ -90,6 +90,12 @@ enum BG_AV_OTHER_VALUES
     BG_AV_MINE_RECLAIM_TIMER    = 1200000,                  // TODO: get the right value.. this is currently 20 minutes
     BG_AV_FACTION_A             = 730,
     BG_AV_FACTION_H             = 729,
+
+	BG_AV_SCRAPS_BUFF_HP_H		= 22751,				// Scraps quests buff rewards
+	BG_AV_SCRAPS_BUFF_HP_A		= 23693,
+	BG_AV_SCRAPS_BUFF_DAMAGE1	= 28418,
+	BG_AV_SCRAPS_BUFF_DAMAGE2	= 28419,
+	BG_AV_SCRAPS_BUFF_DAMAGE3	= 28420,
 };
 #define BG_AV_MAX_MINES 2
 
@@ -98,6 +104,10 @@ enum BG_AV_ObjectIds
     // mine supplies
     BG_AV_OBJECTID_MINE_N               = 178785,
     BG_AV_OBJECTID_MINE_S               = 178784,
+	BG_AV_OBJECTID_H_BANNER				= 178364,
+	BG_AV_OBJECTID_A_BANNER				= 178365,
+	BG_AV_OBJECTID_H_CBANNER			= 179286,
+	BG_AV_OBJECTID_A_CBANNER			= 179287
 };
 
 enum BG_AV_Nodes
@@ -280,7 +290,14 @@ enum BG_AV_QuestIds
     BG_AV_QUEST_A_RIDER_HIDE    = 7026,
     BG_AV_QUEST_H_RIDER_HIDE    = 7002,
     BG_AV_QUEST_A_RIDER_TAME    = 7027,
-    BG_AV_QUEST_H_RIDER_TAME    = 7001
+    BG_AV_QUEST_H_RIDER_TAME    = 7001,
+    BG_AV_QUEST_A_GRAVEYARD		= 7081,
+    BG_AV_QUEST_H_GRAVEYARD		= 7082
+};
+
+enum BG_AV_NPCGUIDs
+{
+	BG_AV_A_COMMANDER1			= 150111
 };
 
 struct BG_AV_NodeInfo
@@ -346,8 +363,9 @@ class BattleGroundAV : public BattleGround
         virtual void EventPlayerClickedOnFlag(Player* source, GameObject* target_obj) override;
         void HandleKillPlayer(Player* player, Player* killer) override;
         void HandleKillUnit(Creature* creature, Player* killer) override;
-        void HandleQuestComplete(uint32 questid, Player* player);
+        void HandleQuestComplete(uint32 questid, Player* player, Object* questGiver);
         bool PlayerCanDoMineQuest(int32 GOId, Team team);
+		void OnCreatureCreate(Creature* pCreature);
 
         void EndBattleGround(Team winner) override;
 
