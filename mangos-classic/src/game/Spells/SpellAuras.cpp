@@ -4641,7 +4641,7 @@ void Aura::PeriodicDummyTick()
                 }
                 case 7057:                                  // Haunting Spirits
                     if (roll_chance_i(33))
-                        target->CastSpell(target, m_modifier.m_amount, TRIGGERED_OLD_TRIGGERED, nullptr, this);
+                        target->CastSpell(target, 7067, TRIGGERED_OLD_TRIGGERED, nullptr, this);
                     return;
                 case 21094:                                 // Separation Anxiety (Majordomo Executus)
                 case 23487:                                 // Separation Anxiety (Garr)
