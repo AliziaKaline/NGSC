@@ -2783,8 +2783,9 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
         // fix activate state for non-stackable low rank (and find next spell for !active case)
         if (sSpellMgr.IsRankedSpellNonStackableInSpellBook(spellInfo))
         {
+            uint32 tempSpellId = spell_id;
             SpellChainMapNext const& nextMap = sSpellMgr.GetSpellChainNext();
-            for (SpellChainMapNext::const_iterator next_itr = nextMap.lower_bound(spell_id); next_itr != nextMap.upper_bound(spell_id); ++next_itr)
+            for (SpellChainMapNext::const_iterator next_itr = nextMap.lower_bound(tempSpellId); next_itr != nextMap.upper_bound(tempSpellId);)
             {
                 if (HasSpell(next_itr->second))
                 {
@@ -2792,6 +2793,11 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
                     active = false;
                     next_active_spell_id = next_itr->second;
                     break;
+                }
+                else
+                {
+                    tempSpellId = next_itr->second;
+                    next_itr = nextMap.lower_bound(next_itr->second);
                 }
             }
         }
@@ -11176,6 +11182,13 @@ void Player::OnGossipSelect(WorldObject* pSource, uint32 gossipListId)
     }
 
     GossipMenuItemData const* pMenuData = gossipmenu.GetItemData(gossipListId);
+    GossipMenuItemData menuData;
+
+    // if pMenuData exist we need to keep a copy of actual data for the following code to process
+    // call like PrepareGossipMenu or SendPreparedGossip might change the value
+    if (pMenuData)
+        menuData = *pMenuData;
+
     switch (gossipOptionId)
     {
         case GOSSIP_OPTION_GOSSIP:
@@ -11183,16 +11196,16 @@ void Player::OnGossipSelect(WorldObject* pSource, uint32 gossipListId)
             if (!pMenuData)
                 break;
 
-            if (pMenuData->m_gAction_poi)
-                PlayerTalkClass->SendPointOfInterest(pMenuData->m_gAction_poi);
+            if (menuData.m_gAction_poi)
+                PlayerTalkClass->SendPointOfInterest(menuData.m_gAction_poi);
 
             // send new menu || close gossip || stay at current menu
-            if (pMenuData->m_gAction_menu > 0)
+            if (menuData.m_gAction_menu > 0)
             {
-                PrepareGossipMenu(pSource, uint32(pMenuData->m_gAction_menu));
+                PrepareGossipMenu(pSource, uint32(menuData.m_gAction_menu));
                 SendPreparedGossip(pSource);
             }
-            else if (pMenuData->m_gAction_menu < 0)
+            else if (menuData.m_gAction_menu < 0)
             {
                 PlayerTalkClass->CloseGossip();
                 TalkedToCreature(pSource->GetEntry(), pSource->GetObjectGuid());
@@ -11321,12 +11334,12 @@ void Player::OnGossipSelect(WorldObject* pSource, uint32 gossipListId)
 #endif
     }
 
-    if (pMenuData && pMenuData->m_gAction_script)
+    if (pMenuData && menuData.m_gAction_script)
     {
         if (pSource->GetTypeId() == TYPEID_UNIT)
-            GetMap()->ScriptsStart(sGossipScripts, pMenuData->m_gAction_script, pSource, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
+            GetMap()->ScriptsStart(sGossipScripts, menuData.m_gAction_script, pSource, this, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_SOURCE);
         else if (pSource->GetTypeId() == TYPEID_GAMEOBJECT)
-            GetMap()->ScriptsStart(sGossipScripts, pMenuData->m_gAction_script, this, pSource, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET);
+            GetMap()->ScriptsStart(sGossipScripts, menuData.m_gAction_script, this, pSource, Map::SCRIPT_EXEC_PARAM_UNIQUE_BY_TARGET);
     }
 }
 
@@ -11981,7 +11994,7 @@ void Player::RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver,
 
     if (BattleGround* bg = GetBattleGround())
         if (bg->GetTypeID() == BATTLEGROUND_AV)
-            ((BattleGroundAV*)bg)->HandleQuestComplete(pQuest->GetQuestId(), this, questGiver);
+            ((BattleGroundAV*)bg)->HandleQuestComplete(pQuest->GetQuestId(), this, questGiver); //Correctif
 
     if (pQuest->GetRewChoiceItemsCount() > 0)
     {

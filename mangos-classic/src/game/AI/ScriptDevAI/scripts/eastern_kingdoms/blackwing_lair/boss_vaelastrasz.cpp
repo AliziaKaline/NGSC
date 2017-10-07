@@ -16,8 +16,8 @@
 
 /* ScriptData
 SDName: Boss_Vaelastrasz
-SD%Complete: 75
-SDComment: Burning Adrenaline not correctly implemented in core
+SD%Complete: 100
+SDComment:
 SDCategory: Blackwing Lair
 EndScriptData
 
@@ -28,36 +28,39 @@ EndScriptData
 
 enum
 {
-    SAY_LINE_1                  = -1469026,
-    SAY_LINE_2                  = -1469027,
-    SAY_LINE_3                  = -1469028,
-    SAY_HALFLIFE                = -1469029,
-    SAY_KILLTARGET              = -1469030,
-    SAY_NEFARIUS_CORRUPT_1      = -1469006,                 // When he corrupts Vaelastrasz
-    SAY_NEFARIUS_CORRUPT_2      = -1469032,
-    SAY_TECHNICIAN_RUN          = -1469034,
+    SAY_LINE_1                      = -1469026,
+    SAY_LINE_2                      = -1469027,
+    SAY_LINE_3                      = -1469028,
+    SAY_HALFLIFE                    = -1469029,
+    SAY_KILLTARGET                  = -1469030,
+    SAY_NEFARIUS_CORRUPT_1          = -1469006,                 // When he corrupts Vaelastrasz
+    SAY_NEFARIUS_CORRUPT_2          = -1469032,
+    SAY_TECHNICIAN_RUN              = -1469034,
 
-    NPC_BLACKWING_TECHNICIAN    = 13996,                    // Flees at Vael intro event
+    NPC_BLACKWING_TECHNICIAN        = 13996,                    // Flees at Vael intro event
 
-    SPELL_ESSENCE_OF_THE_RED    = 23513,
-    SPELL_FLAME_BREATH          = 23461,
-    SPELL_FIRE_NOVA             = 23462,
-    SPELL_TAIL_SWEEP            = 15847,
-    SPELL_BURNING_ADRENALINE    = 23620,
-    SPELL_CLEAVE                = 20684,                    // Chain cleave is most likely named something different and contains a dummy effect
+    SPELL_ESSENCE_OF_THE_RED        = 23513,
+    SPELL_FLAME_BREATH              = 23461,
+    SPELL_FIRE_NOVA                 = 23462,
+    SPELL_TAIL_SWEEP                = 15847,
+    SPELL_BURNING_ADRENALINE_TANK   = 18173,
+    SPELL_BURNING_ADRENALINE        = 23620,
+    SPELL_CLEAVE                    = 20684,                    // Chain cleave is most likely named something different and contains a dummy effect
 
-    SPELL_NEFARIUS_CORRUPTION   = 23642,
-    SPELL_RED_LIGHTNING         = 24240,
+    SPELL_NEFARIUS_CORRUPTION       = 23642,
+    SPELL_RED_LIGHTNING             = 19484,
 
-    GOSSIP_ITEM_VAEL_1          = -3469003,
-    GOSSIP_ITEM_VAEL_2          = -3469004,
+    GOSSIP_ITEM_VAEL_1              = -3469003,
+    GOSSIP_ITEM_VAEL_2              = -3469004,
 
-    GOSSIP_TEXT_VAEL_1          = 7156,
-    GOSSIP_TEXT_VAEL_2          = 7256,
+    GOSSIP_TEXT_VAEL_1              = 7156,
+    GOSSIP_TEXT_VAEL_2              = 7256,
 
-    FACTION_HOSTILE             = 14,
+    FACTION_HOSTILE                 = 14,
 
-    AREATRIGGER_VAEL_INTRO      = 3626,
+    AREATRIGGER_VAEL_INTRO          = 3626,
+
+    QUEST_NEFARIUS_CORRUPTION       = 8730,
 };
 
 struct boss_vaelastraszAI : public ScriptedAI
@@ -105,7 +108,7 @@ struct boss_vaelastraszAI : public ScriptedAI
         m_uiTailSweepTimer               = 20000;
         m_bHasYelled = false;
 
-        // Creature should have only 1/3 of hp
+        // Creature should have only 30% of hp
         m_creature->SetHealth(uint32(m_creature->GetMaxHealth()*.3));
     }
 
@@ -189,35 +192,30 @@ struct boss_vaelastraszAI : public ScriptedAI
 
                         // Search for the Blackwing Technicians tormeting Vaelastrasz to make them flee to the next room above the stairs
                         GetCreatureListWithEntryInGrid(lTechniciansList, m_creature, NPC_BLACKWING_TECHNICIAN, 40.0f);
-
                         for (std::list<Creature*>::const_iterator itr = lTechniciansList.begin(); itr != lTechniciansList.end(); ++itr)
                         {
+                            // Ignore Blackwing Technicians on upper floors and dead ones
+                            if (!((*itr)->isAlive()) || (*itr)->GetPositionZ() > m_creature->GetPositionZ() + 1)
+                                continue;
+
+                            // Each fleeing part and despawn is handled in DB, we only need to make them run
+                            (*itr)->SetWalk(false);
+
                             // The technicians will behave differently depending on they are on the right or left side of
                             // Vaelastrasz. We compare their X position to Vaelastrasz X position to sort them out
-                            if (Creature* pTechnician = m_creature->GetMap()->GetCreature((*itr)->GetObjectGuid()))
+                            if ((*itr)->GetPositionX() > m_creature->GetPositionX())
                             {
-                                // Ignore Blackwing Technicians on upper floors
-                                if (pTechnician->GetPositionZ() > m_creature->GetPositionZ() + 1)
-                                    continue;
-
-                                pTechnician->SetWalk(false);
-
-                                // Check is on left or right side
-                                // Each fleeing part and despawn is handled in DB
-                                if (pTechnician->GetPositionX() > m_creature->GetPositionX())
+                                // Left side
+                                if (!bHasYelled)
                                 {
-                                    // Left side
-                                    if (!bHasYelled)
-                                    {
-                                        DoScriptText(SAY_TECHNICIAN_RUN, pTechnician);
-                                        bHasYelled = true;
-                                    }
-                                    pTechnician->GetMotionMaster()->MoveWaypoint(0);
+                                    DoScriptText(SAY_TECHNICIAN_RUN, (*itr));
+                                    bHasYelled = true;
                                 }
-                                else
-                                    // Right side
-                                    pTechnician->GetMotionMaster()->MoveWaypoint(1);
+                                (*itr)->GetMotionMaster()->MoveWaypoint(0);
                             }
+                            else
+                                // Right side
+                                (*itr)->GetMotionMaster()->MoveWaypoint(1);
                         }
                         m_uiIntroTimer = 1000;
                         break;
@@ -236,10 +234,10 @@ struct boss_vaelastraszAI : public ScriptedAI
                         // Set npc flags now
                         m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
                         m_creature->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER);
-                        m_uiIntroTimer = 7000;
+                        m_uiIntroTimer = 6000;
                         break;
                     case 3:
-                         if (Creature* pNefarius = m_creature->GetMap()->GetCreature(m_nefariusGuid))
+                        if (Creature* pNefarius = m_creature->GetMap()->GetCreature(m_nefariusGuid))
                             pNefarius->CastSpell(m_creature, SPELL_RED_LIGHTNING, TRIGGERED_NONE);
                         m_uiIntroTimer = 0;
                         break;
@@ -331,7 +329,7 @@ struct boss_vaelastraszAI : public ScriptedAI
         {
             // have the victim cast the spell on himself otherwise the third effect aura will be applied
             // to Vael instead of the player
-            m_creature->getVictim()->CastSpell(m_creature->getVictim(), SPELL_BURNING_ADRENALINE, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, m_creature->GetObjectGuid());
+            m_creature->getVictim()->CastSpell(m_creature->getVictim(), SPELL_BURNING_ADRENALINE_TANK, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, m_creature->GetObjectGuid());
 
             m_uiBurningAdrenalineTankTimer = 45000;
         }
@@ -389,6 +387,17 @@ bool GossipHello_boss_vaelastrasz(Player* pPlayer, Creature* pCreature)
     return true;
 }
 
+bool QuestAccept_boss_vaelastrasz(Player* pPlayer, Creature* pCreature, const Quest* pQuest)
+{
+    if (pQuest->GetQuestId() == QUEST_NEFARIUS_CORRUPTION)
+    {
+        if (instance_blackwing_lair* pInstance = (instance_blackwing_lair*)pPlayer->GetInstanceData())
+            pInstance->SetData(TYPE_QUEST_SCEPTER, IN_PROGRESS);
+    }
+
+    return true;
+}
+
 CreatureAI* GetAI_boss_vaelastrasz(Creature* pCreature)
 {
     return new boss_vaelastraszAI(pCreature);
@@ -410,8 +419,6 @@ bool AreaTrigger_at_vaelastrasz(Player* pPlayer, AreaTriggerEntry const* pAt)
                     if (boss_vaelastraszAI* pVaelAI = dynamic_cast<boss_vaelastraszAI*>(pVaelastrasz->AI()))
                         pVaelAI->BeginIntro();
             }
-
-            // ToDo: make goblins flee
         }
     }
 
@@ -427,6 +434,7 @@ void AddSC_boss_vaelastrasz()
     pNewScript->GetAI = &GetAI_boss_vaelastrasz;
     pNewScript->pGossipHello = &GossipHello_boss_vaelastrasz;
     pNewScript->pGossipSelect = &GossipSelect_boss_vaelastrasz;
+    pNewScript->pQuestAcceptNPC = &QuestAccept_boss_vaelastrasz;
     pNewScript->RegisterSelf();
 
     pNewScript = new Script;

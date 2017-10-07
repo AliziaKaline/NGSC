@@ -358,7 +358,7 @@ class BattleGroundAV : public BattleGround
         virtual void EventPlayerClickedOnFlag(Player* source, GameObject* target_obj) override;
         void HandleKillPlayer(Player* player, Player* killer) override;
         void HandleKillUnit(Creature* creature, Player* killer) override;
-        void HandleQuestComplete(uint32 questid, Player* player, Object* questGiver);
+        void HandleQuestComplete(uint32 questid, Player* player, Object* questGiver); // Correctif
         bool PlayerCanDoMineQuest(int32 GOId, Team team);
 
         void EndBattleGround(Team winner) override;
