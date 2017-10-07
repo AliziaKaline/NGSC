@@ -257,28 +257,6 @@ CreatureAI* GetAI_npc_spirit_guide(Creature* pCreature)
     return new npc_spirit_guideAI(pCreature);
 }
 
-enum // Correctif
-{
-	NPC_SLIDORE_GRYPHON			= 14946,
-
-	SPELL_REND					= 16509,
-	SPELL_STRIKE				= 15580,
-	SPELL_CONJURE_SLIDORE_BEACON= 21732,
-
-	ITEM_SLIDORE_BEACON			= 17507,
-
-	SAY_SLIDORE_START_ESCORT	= -1134381,
-	SAY_SLIDORE_FLIGHT_READY	= -1134382,
-	SAY_SLIDORE_START_PATROL	= -1134383,
-
-	GOSSIP_ID_SLIDORE1			= 5148,
-	GOSSIP_ID_SLIDORE2			= 5248,
-
-	GOSSIP_ITEM_SLIDORE_ESCORT	= -3134381,
-	GOSSIP_ITEM_SLIDORE_BEACON	= -3134382,
-	GOSSIP_ITEM_SLIDORE_FLIGHT	= -3134383
-};
-
 struct npc_wing_commander_slidoreAI : public npc_escortAI
 {
 	// CreatureAI functions
