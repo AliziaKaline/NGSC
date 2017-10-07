@@ -1007,31 +1007,12 @@ void Aura::TriggerSpell()
     else                                                    // initial triggeredSpellInfo != nullptr
     {
 		// for channeled spell cast applied from aura owner to channel target (persistent aura affects already applied to true target)
-        // come periodic casts applied to targets, so need seelct proper caster (ex. 15790)
+        // come periodic casts applied to targets, so need select proper caster (ex. 15790)
         if (IsChanneledSpell(GetSpellProto()) && GetSpellProto()->Effect[GetEffIndex()] != SPELL_EFFECT_PERSISTENT_AREA_AURA)
         {
 			// interesting 2 cases: periodic aura at caster of channeled spell
             if (target->GetObjectGuid() == casterGUID)
-            {
-                triggerCaster = target;
-
-                if (WorldObject* channelTarget = target->GetMap()->GetWorldObject(target->GetChannelObjectGuid()))
-                {
-                    if (channelTarget->isType(TYPEMASK_UNIT))
-                        triggerTarget = (Unit*)channelTarget;
-                    else
-                        triggerTargetObject = channelTarget;
-                }
-            }
-            // or periodic aura at caster channel target
-            else if (Unit* caster = GetCaster())
-            {
-                if (target->GetObjectGuid() == caster->GetChannelObjectGuid())
-                {
-                    triggerCaster = caster;
-                    triggerTarget = target;
-                }
-            }
+            	triggerCaster = target;
         }
 
         // Spell exist but require custom code
@@ -1129,14 +1110,10 @@ void Aura::TriggerSpell()
     if (triggeredSpellInfo)
     {
 		if (triggerTargetObject)
-		{
-			triggerCaster->CastSpell(triggerTargetObject->GetPositionX(), triggerTargetObject->GetPositionY(), triggerTargetObject->GetPositionZ(),
+		triggerCaster->CastSpell(triggerTargetObject->GetPositionX(), triggerTargetObject->GetPositionY(), triggerTargetObject->GetPositionZ(),
                                      triggeredSpellInfo, TRIGGERED_OLD_TRIGGERED, nullptr, this, casterGUID);
-		}
 		else
-		{
 			triggerCaster->CastSpell(triggerTarget, triggeredSpellInfo, TRIGGERED_OLD_TRIGGERED, nullptr, this, casterGUID);
-		}
     }
     else
     {
@@ -1446,16 +1423,10 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
     // pet auras
     if (PetAura const* petSpell = sSpellMgr.GetPetAura(GetId()))
     {
-		target = GetSpellProto()->Id == 28757 ? GetCaster() : target;
-		
 		if (apply)
-		{
 			target->AddPetAura(petSpell);
-		}
 		else
-		{
 			target->RemovePetAura(petSpell);
-		}
         return;
     }
 
@@ -1474,9 +1445,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
 
     // script has to "handle with care", only use where data are not ok to use in the above code.
 	if (target->GetTypeId() == TYPEID_UNIT)
-	{
 		sScriptDevAIMgr.OnAuraDummy(this, apply);
-	}
 }
 
 void Aura::HandleAuraMounted(bool apply, bool Real)
@@ -2814,6 +2783,12 @@ void Aura::HandlePeriodicTriggerSpell(bool apply, bool /*Real*/)
     {
         switch (GetId())
         {
+            case 18173:                                     // Burning Adrenaline (Main Target version)
+            case 23620:                                     // Burning Adrenaline (Caster version)
+                // On aura removal, the target deals AoE damage to friendlies and kills himself/herself (prevent durability loss)
+                target->CastSpell(target, 23478, TRIGGERED_OLD_TRIGGERED, 0, this);
+                target->CastSpell(target, 23644, TRIGGERED_OLD_TRIGGERED, 0, this);
+                return;
             case 29213:                                     // Curse of the Plaguebringer
                 if (m_removeMode != AURA_REMOVE_BY_DISPEL)
                     // Cast Wrath of the Plaguebringer if not dispelled

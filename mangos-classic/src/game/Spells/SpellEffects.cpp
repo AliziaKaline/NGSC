@@ -2283,7 +2283,13 @@ void Spell::EffectSummon(SpellEffectIndex eff_idx)
     m_caster->SetPet(spawnCreature);
 
     if (m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
-        spawnCreature->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
+        spawnCreature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
+
+    if (m_caster->IsImmuneToNPC())
+        spawnCreature->SetImmuneToNPC(true);
+
+    if (m_caster->IsImmuneToPlayer())
+        spawnCreature->SetImmuneToPlayer(true);
 
     // Notify Summoner
     if (m_originalCaster && (m_originalCaster != m_caster) && (m_originalCaster->AI()))
@@ -2776,6 +2782,12 @@ void Spell::EffectSummonGuardian(SpellEffectIndex eff_idx)
         if (m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
             spawnCreature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
 
+        if (m_caster->IsImmuneToNPC())
+            spawnCreature->SetImmuneToNPC(true);
+
+        if (m_caster->IsImmuneToPlayer())
+            spawnCreature->SetImmuneToPlayer(true);
+
         if (m_caster->IsPvP())
             spawnCreature->SetPvP(true);
 
@@ -2783,7 +2795,7 @@ void Spell::EffectSummonGuardian(SpellEffectIndex eff_idx)
         {
             charmInfo->SetPetNumber(pet_number, false);
 
-            if (spawnCreature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC))
+            if (cInfo->UnitFlags & UNIT_FLAG_IMMUNE_TO_NPC)
                 charmInfo->SetReactState(REACT_PASSIVE);
             else if (cInfo->ExtraFlags & CREATURE_EXTRA_FLAG_NO_MELEE)
                 charmInfo->SetReactState(REACT_DEFENSIVE);
@@ -2999,6 +3011,15 @@ void Spell::EffectTameCreature(SpellEffectIndex /*eff_idx*/)
     pet->setFaction(plr->getFaction());
     pet->SetUInt32Value(UNIT_CREATED_BY_SPELL, m_spellInfo->Id);
 
+    if (plr->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
+        pet->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
+
+    if (plr->IsImmuneToNPC())
+        pet->SetImmuneToNPC(true);
+
+    if (plr->IsImmuneToPlayer())
+        pet->SetImmuneToPlayer(true);
+
     if (plr->IsPvP())
         pet->SetPvP(true);
 
@@ -3140,6 +3161,15 @@ void Spell::EffectSummonPet(SpellEffectIndex eff_idx)
     if (m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
         NewSummon->SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
 
+    if (m_caster->IsImmuneToNPC())
+        NewSummon->SetImmuneToNPC(true);
+
+    if (m_caster->IsImmuneToPlayer())
+        NewSummon->SetImmuneToPlayer(true);
+
+    if (m_caster->IsPvP())
+        NewSummon->SetPvP(true);
+
     if (m_caster->GetTypeId() == TYPEID_PLAYER)
     {
         NewSummon->SetUInt32Value(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_NONE);
@@ -3150,9 +3180,6 @@ void Spell::EffectSummonPet(SpellEffectIndex eff_idx)
 
         // generate new name for summon pet
         NewSummon->SetName(sObjectMgr.GeneratePetName(petentry));
-
-        if (m_caster->IsPvP())
-            NewSummon->SetPvP(true);
 
         NewSummon->LearnPetPassives();
         NewSummon->CastPetAuras(true);
@@ -3165,9 +3192,9 @@ void Spell::EffectSummonPet(SpellEffectIndex eff_idx)
     }
     else
     {
+        NewSummon->SetFlag(UNIT_FIELD_FLAGS, cInfo->UnitFlags);
         NewSummon->SetUInt32Value(UNIT_NPC_FLAGS, cInfo->NpcFlags);
-        NewSummon->SetUInt32Value(UNIT_FIELD_FLAGS, cInfo->UnitFlags);
-
+        
         // Notify Summoner
         if (m_originalCaster && (m_originalCaster != m_caster) && (m_originalCaster->AI()))
             m_originalCaster->AI()->JustSummoned(NewSummon);
@@ -4067,20 +4094,39 @@ void Spell::EffectStuck(SpellEffectIndex /*eff_idx*/)
     Player* pTarget = (Player*)unitTarget;
 
     DEBUG_LOG("Spell Effect: Stuck");
-    DETAIL_LOG("Player %s (guid %u) used auto-unstuck future at map %u (%f, %f, %f)", pTarget->GetName(), pTarget->GetGUIDLow(), m_caster->GetMapId(), m_caster->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ());
+    DETAIL_LOG("Player %s (guid %u) used auto-unstuck feature at map %u (%f, %f, %f)", pTarget->GetName(), pTarget->GetGUIDLow(), m_caster->GetMapId(), m_caster->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ());
 
     if (pTarget->IsTaxiFlying())
         return;
 
-    // homebind location is loaded always
-    pTarget->TeleportToHomebind(unitTarget == m_caster ? TELE_TO_SPELL : 0);
+    // If the player is dead, it will return them to the graveyard closest to their corpse.
+    if (pTarget->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
+    {
+        pTarget->RepopAtGraveyard();
+        return;
+    }
 
-    // Stuck spell trigger Hearthstone cooldown
+    // If the player is alive, and their hearthstone is in their inventory, and their hearthstone
+    // is cooled down, it will activate their hearthstone. The 30 minute hearthstone cooldown is activated as usual.
+    if (pTarget->IsSpellReady(8690) && pTarget->HasItemCount(6948, 1, false))
+    {
+    pTarget->TeleportToHomebind(unitTarget == m_caster ? TELE_TO_SPELL : 0);
+        // Trigger cooldown
     SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(8690);
     if (!spellInfo)
         return;
-    Spell spell(pTarget, spellInfo, true);
+        Spell spell(pTarget, spellInfo, TRIGGERED_OLD_TRIGGERED);
     spell.SendSpellCooldown();
+    }
+    else
+    {
+        // If the player is alive, but their hearthstone is either not in their inventory (e.g. in the bank) or 
+        // their hearthstone is on cooldown, then the game will try to "nudge" the player in a seemingly random direction.
+        // @todo This check could possibly more accurately find a safe position to port to, has the potential for porting underground.
+        float x, y, z;
+        pTarget->GetNearPoint(pTarget, x, y, z, DEFAULT_WORLD_OBJECT_SIZE, 10.0f, pTarget->GetOrientation());
+        pTarget->NearTeleportTo(x, y, z, pTarget->GetOrientation());
+    }
 }
 
 void Spell::EffectSummonPlayer(SpellEffectIndex /*eff_idx*/)
@@ -4267,6 +4313,12 @@ void Spell::EffectSummonTotem(SpellEffectIndex eff_idx)
 
     if (m_caster->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
         pTotem->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
+
+    if (m_caster->IsImmuneToNPC())
+        pTotem->SetImmuneToNPC(true);
+
+    if (m_caster->IsImmuneToPlayer())
+        pTotem->SetImmuneToPlayer(true);
 
     if (m_caster->IsPvP())
         pTotem->SetPvP(true);
@@ -4774,7 +4826,7 @@ void Spell::EffectSummonCritter(SpellEffectIndex eff_idx)
     critter->SelectLevel();                                 // some summoned critters have different from 1 DB data for level/hp
     const CreatureInfo* info = critter->GetCreatureInfo();
     // Some companions have additional UNIT_FLAG_NON_ATTACKABLE (0x2), perphaps coming from template, so add template flags
-    critter->SetUInt32Value(UNIT_FIELD_FLAGS, (UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC | info->UnitFlags));
+    critter->SetUInt32Value(UNIT_FIELD_FLAGS, info->UnitFlags);
     critter->SetUInt32Value(UNIT_NPC_FLAGS, info->NpcFlags);// some companions may have quests, so they need npc flags
     critter->InitPetCreateSpells();                         // some companions may have spells (e.g. disgusting oozeling)
     if (m_duration > 0)                                     // set timer for unsummon
@@ -4784,6 +4836,12 @@ void Spell::EffectSummonCritter(SpellEffectIndex eff_idx)
 
     if (player->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED))
         critter->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
+
+    // NOTE: All companions should have these (creatureinfo needs to be tuned accordingly before we can remove these two lines):
+    critter->SetImmuneToNPC(true);
+    critter->SetImmuneToPlayer(true);
+
+    // NOTE: Do not set PvP flags (confirmed) for companions.
 
     critter->SetByteValue(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_SUPPORTABLE | UNIT_BYTE2_FLAG_UNK5);
 

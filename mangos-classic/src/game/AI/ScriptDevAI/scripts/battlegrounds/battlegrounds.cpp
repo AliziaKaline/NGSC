@@ -24,7 +24,7 @@ EndScriptData
 */
 
 #include "AI/ScriptDevAI/PreCompiledHeader.h"
-#include "AI/ScriptDevAI/base/escort_ai.h"
+#include "AI/ScriptDevAI/base/escort_ai.h" // Correctif
 
 // **** Script Info ****
 // Spiritguides in battlegrounds resurrecting many players at once
@@ -97,7 +97,7 @@ CreatureAI* GetAI_npc_spirit_guide(Creature* pCreature)
     return new npc_spirit_guideAI(pCreature);
 }
 
-enum
+enum // Correctif
 {
 	NPC_SLIDORE_GRYPHON			= 14946,
 
@@ -1844,7 +1844,7 @@ void AddSC_battleground()
 	pNewScript->pGossipHello = &GossipHello_npc_spirit_guide;
 	pNewScript->RegisterSelf();
 
-	pNewScript = new Script;
+	pNewScript = new Script; // Correctif
 	pNewScript->Name = "npc_wing_commander_slidore";
 	pNewScript->GetAI = &GetAI_npc_wing_commander_slidore;
 	pNewScript->pGossipHello = &GossipHello_npc_wing_commander_slidore;

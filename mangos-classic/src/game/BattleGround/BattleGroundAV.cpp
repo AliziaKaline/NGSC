@@ -94,7 +94,7 @@ void BattleGroundAV::HandleKillUnit(Creature* creature, Player* killer)
     }
 }
 
-void BattleGroundAV::HandleQuestComplete(uint32 questid, Player* player, Object* questGiver)
+void BattleGroundAV::HandleQuestComplete(uint32 questid, Player* player, Object* questGiver) // Correctif
 {
     if (GetStatus() != STATUS_IN_PROGRESS)
         return;
@@ -124,7 +124,7 @@ void BattleGroundAV::HandleQuestComplete(uint32 questid, Player* player, Object*
         case BG_AV_QUEST_H_COMMANDER1:
             m_Team_QuestStatus[teamIdx][1]++;
             reputation = 1;
-            if (m_Team_QuestStatus[teamIdx][1] == 90)
+            if (m_Team_QuestStatus[teamIdx][1] == 90) //Correctif
 	    {
                 DEBUG_LOG("BattleGroundAV: Quest %i completed", questid);
 		Creature* npc = GetBgMap()->GetCreature(questGiver->GetObjectGuid());
@@ -137,24 +137,14 @@ void BattleGroundAV::HandleQuestComplete(uint32 questid, Player* player, Object*
             m_Team_QuestStatus[teamIdx][2]++;
             reputation = 2;
             if (m_Team_QuestStatus[teamIdx][2] == 60)
-	    {
-		DEBUG_LOG("BattleGroundAV: Quest %i completed", questid);
-		Creature* npc = GetBgMap()->GetCreature(questGiver->GetObjectGuid());
-		npc->AI()->SendAIEventAround(AI_EVENT_CUSTOM_EVENTAI_A, npc, 4, 1);
-		break;
-	    }
+                DEBUG_LOG("BattleGroundAV: Quest %i completed (need to implement some events here", questid);
             break;
         case BG_AV_QUEST_A_COMMANDER3:
         case BG_AV_QUEST_H_COMMANDER3:
             m_Team_QuestStatus[teamIdx][3]++;
             reputation = 5;
-            if (m_Team_QuestStatus[teamIdx][3] == 30)
-	    {
-		DEBUG_LOG("BattleGroundAV: Quest %i completed", questid);
-		Creature* npc = GetBgMap()->GetCreature(questGiver->GetObjectGuid());
-		npc->AI()->SendAIEventAround(AI_EVENT_CUSTOM_EVENTAI_A, npc, 4, 1);
-		break;
-	    }
+            if (m_Team_QuestStatus[teamIdx][1] == 30)
+                DEBUG_LOG("BattleGroundAV: Quest %i completed (need to implement some events here", questid);
             break;
         case BG_AV_QUEST_A_BOSS1:
         case BG_AV_QUEST_H_BOSS1:
