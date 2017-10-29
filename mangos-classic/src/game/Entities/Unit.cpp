@@ -489,12 +489,27 @@ void Unit::Update(uint32 update_diff, uint32 p_time)
         ModifyAuraState(AURA_STATE_HEALTHLESS_20_PERCENT, GetHealth() < GetMaxHealth() * 0.20f);
 }
 
+void Unit::TriggerEvadeEvents()
+{
+    if (InstanceData* mapInstance = GetInstanceData())
+        mapInstance->OnCreatureEvade((Creature*)this);
+
+    if (m_isCreatureLinkingTrigger)
+        GetMap()->GetCreatureLinkingHolder()->DoCreatureLinkingEvent(LINKING_EVENT_EVADE, (Creature*)this);
+}
+
 bool Unit::UpdateMeleeAttackingState()
 {
     Unit* victim = getVictim();
     if (!victim || IsNonMeleeSpellCasted(false))
         return false;
 
+    if (GetTypeId() != TYPEID_PLAYER && (!((Creature*)this)->CanInitiateAttack() || !victim->isInAccessablePlaceFor((Creature*)this)))
+        return false;
+ 
+    if (!CanAttack(victim))
+        return false;
+ 
     if (!isAttackReady(BASE_ATTACK) && !(isAttackReady(OFF_ATTACK) && haveOffhandWeapon()))
         return false;
 
@@ -1172,7 +1187,7 @@ void Unit::JustKilledCreature(Creature* victim, Player* responsiblePlayer)
 void Unit::PetOwnerKilledUnit(Unit* pVictim)
 {
     // for minipet and guardians (including protector)
-    CallForAllControlledUnits(PetOwnerKilledUnitHelper(pVictim), CONTROLLED_MINIPET | CONTROLLED_GUARDIANS);
+    CallForAllControlledUnits(PetOwnerKilledUnitHelper(pVictim), CONTROLLED_MINIPET | CONTROLLED_GUARDIANS | CONTROLLED_CHARM);
 }
 
 void Unit::CastStop(uint32 except_spellid)
@@ -3538,7 +3553,7 @@ void Unit::_UpdateAutoRepeatSpell()
         }
 
         // some check about new target are necessary
-        if (!currTarget || !currTarget->isTargetableForAttack() || IsFriendlyTo(currTarget))
+        if (!currTarget || !CanAttack(currTarget))
         {
             // no valid target
             InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
@@ -4025,31 +4040,30 @@ bool Unit::AddSpellAuraHolder(SpellAuraHolder* holder)
                     continue;
                 }
 
+                bool removed = false;
                 switch (trackedType)
                 {
                     case TRACK_AURA_TYPE_SINGLE_TARGET:
-                        if (IsSingleTargetSpells(itr_spellEntry, aurSpellInfo))
+                        if (sSpellMgr.IsSingleTargetSpells(itr_spellEntry, aurSpellInfo))
                         {
+                            removed = true;
                             // remove from target if target found
                             if (Unit* itr_target = GetMap()->GetUnit(itr_targetGuid))
-                            {
-                                // another target found for this spell remove older one
-                                SpellAuraHolder* targetHolder = itr_target->GetSpellAuraHolder(itr_spellEntry->Id);
-                                if (holder->GetState() == SPELLAURAHOLDER_STATE_READY)      // Check if holder is ready before removing it
-                                    itr_target->RemoveAurasDueToSpell(itr_spellEntry->Id);  // TODO AURA_REMOVE_BY_TRACKING (might require additional work elsewhere)
-                            }
+                                itr_target->RemoveAurasDueToSpell(itr_spellEntry->Id); // TODO AURA_REMOVE_BY_TRACKING (might require additional work elsewhere)
                             else                            // Normally the tracking will be removed by the AuraRemoval
-                            {
-                                itr = scTargets.erase(itr);
-                                continue;
-                            }
-
+                                scTargets.erase(itr);
                         }
                         break;
                     case TRACK_AURA_TYPE_NOT_TRACKED:       // These two can never happen
                     case MAX_TRACKED_AURA_TYPES:
                         MANGOS_ASSERT(false);
                         break;
+                }
+
+                if (removed)
+                {
+                    itr = scTargets.begin();                // list can be chnaged at remove aura
+                    continue;
                 }
 
                 ++itr;
@@ -4663,21 +4677,18 @@ void Unit::RemoveAllAurasOnDeath()
 void Unit::RemoveAllAurasOnEvade()
 {
     // used when evading to remove all auras except some special auras
-    // Linked and flying auras should not be removed on evade
+    // Fly should not be removed on evade - neither should linked auras
+    // Some cosmetic script auras should not be removed on evade either
     for (SpellAuraHolderMap::iterator iter = m_spellAuraHolders.begin(); iter != m_spellAuraHolders.end();)
     {
-        // Note: for the moment this part of the function is used as a placeholder to keep in sync with master branch
-        /*SpellEntry const* proto = iter->second->GetSpellProto();
-        if (!IsSpellHaveAura(proto, SPELL_AURA_CONTROL_VEHICLE))
+        SpellEntry const* proto = iter->second->GetSpellProto();
+        if (IsSpellRemovedOnEvade(proto))
         {
             RemoveSpellAuraHolder(iter->second, AURA_REMOVE_BY_DEFAULT);
             iter = m_spellAuraHolders.begin();
         }
         else
-            ++iter;*/
-
-        RemoveSpellAuraHolder(iter->second, AURA_REMOVE_BY_DEFAULT);
-        iter = m_spellAuraHolders.begin();
+            ++iter;
     }
 }
 
@@ -4763,6 +4774,22 @@ bool Unit::HasAura(uint32 spellId, SpellEffectIndex effIndex) const
             return true;
 
     return false;
+}
+
+uint32 Unit::GetAuraCount(uint32 spellId) const
+{
+    uint32 count = 0;
+    SpellAuraHolderConstBounds spair = GetSpellAuraHolderBounds(spellId);
+
+    for (auto itr = spair.first; itr != spair.second; ++itr)
+    {
+        if (itr->second->GetStackAmount() == 0)
+            ++count;
+        else
+            count += (uint32)itr->second->GetStackAmount();
+    }
+
+    return count;
 }
 
 void Unit::AddDynObject(DynamicObject* dynObj)
@@ -6746,7 +6773,7 @@ void Unit::Unmount(bool from_aura)
         if (Pet* pet = GetPet())
         {
             if (CharmInfo* charmInfo = pet->GetCharmInfo())
-                pet->SetModeFlags(PetModeFlags(charmInfo->GetReactState() | charmInfo->GetCommandState() * 0x100));
+                pet->SetModeFlags(PetModeFlags(pet->AI()->GetReactState() | charmInfo->GetCommandState() * 0x100));
         }
         else
             ((Player*)this)->ResummonPetTemporaryUnSummonedIfAny();
@@ -6939,28 +6966,6 @@ void Unit::ClearInCombat()
 
     if (GetTypeId() == TYPEID_PLAYER)
         static_cast<Player*>(this)->pvpInfo.inPvPCombat = false;
-}
-
-bool Unit::isTargetableForAttack(bool inverseAlive /*=false*/) const
-{
-    if (!CanBeDetected())
-        return false;
-
-    if (GetTypeId() == TYPEID_PLAYER && ((Player*)this)->isGameMaster())
-        return false;
-
-    if (HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE))
-        return false;
-
-    // This check should be done only for players or players controlled creature
-    if (GetBeneficiaryPlayer() && HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER))
-        return false;
-
-    // inversealive is needed for some spells which need to be casted at dead targets (aoe)
-    if (isAlive() == inverseAlive)
-        return false;
-
-    return IsInWorld() && !hasUnitState(UNIT_STAT_FEIGN_DEATH) && !IsTaxiFlying();
 }
 
 int32 Unit::ModifyHealth(int32 dVal)
@@ -7221,6 +7226,33 @@ bool Unit::isVisibleForOrDetect(Unit const* u, WorldObject const* viewPoint, boo
     float ox, oy, oz;
     viewPoint->GetPosition(ox, oy, oz);
     return IsWithinLOS(ox, oy, oz);
+}
+
+float Unit::GetVisibleDist(Unit const* u)
+{
+    // set max ditance
+    float visibleDistance = (u->GetTypeId() == TYPEID_PLAYER) ? MAX_PLAYER_STEALTH_DETECT_RANGE : ((Creature const*)u)->GetAttackDistance(this);
+
+    // Calculation if target is in front
+
+    // Visible distance based on stealth value (stealth rank 4 300MOD, 10.5 - 3 = 7.5)
+    visibleDistance = 10.5f - (GetTotalAuraModifier(SPELL_AURA_MOD_STEALTH) / 100.0f);
+
+    // Visible distance is modified by
+    //-Level Diff (every level diff = 1.0f in visible distance)
+    visibleDistance += int32(u->GetLevelForTarget(this)) - int32(GetLevelForTarget(u));
+
+    // This allows to check talent tree and will add addition stealth dependent on used points)
+    int32 stealthMod = GetTotalAuraModifier(SPELL_AURA_MOD_STEALTH_LEVEL);
+    if (stealthMod < 0)
+        stealthMod = 0;
+
+    //-Stealth Mod(positive like Master of Deception) and Stealth Detection(negative like paranoia)
+    // based on wowwiki every 5 mod we have 1 more level diff in calculation
+    visibleDistance += (int32(u->GetTotalAuraModifier(SPELL_AURA_MOD_STEALTH_DETECT)) - stealthMod) / 5.0f;
+    visibleDistance = visibleDistance > MAX_PLAYER_STEALTH_DETECT_RANGE ? MAX_PLAYER_STEALTH_DETECT_RANGE : visibleDistance;
+
+    return visibleDistance;
 }
 
 void Unit::UpdateVisibilityAndView()
@@ -7688,7 +7720,7 @@ void Unit::FixateTarget(Unit* pVictim)
 {
     if (!pVictim)                                           // Remove Fixation
         m_fixateTargetGuid.Clear();
-    else if (pVictim->isTargetableForAttack())              // Apply Fixation
+    else if (CanAttack(pVictim))                            // Apply Fixation
         m_fixateTargetGuid = pVictim->GetObjectGuid();
 
     // Start attacking the fixated target or the next proper one
@@ -7754,7 +7786,7 @@ bool Unit::SelectHostileTarget()
         for (AuraList::const_reverse_iterator aura = tauntAuras.rbegin(); aura != tauntAuras.rend(); ++aura)
         {
             if ((caster = (*aura)->GetCaster()) && caster->IsInMap(this) &&
-                    caster->isTargetableForAttack() && caster->isInAccessablePlaceFor((Creature*)this) &&
+                    CanAttack(caster) && caster->isInAccessablePlaceFor((Creature*)this) &&
                     !IsSecondChoiceTarget(caster, true, true))
             {
                 target = caster;
@@ -7816,7 +7848,7 @@ bool Unit::SelectHostileTarget()
     {
         for (AttackerSet::const_iterator itr = m_attackers.begin(); itr != m_attackers.end(); ++itr)
         {
-            if ((*itr)->IsInMap(this) && (*itr)->isTargetableForAttack() && (*itr)->isInAccessablePlaceFor((Creature*)this))
+            if ((*itr)->IsInMap(this) && CanAttack((*itr)) && (*itr)->isInAccessablePlaceFor((Creature*)this))
                 return false;
         }
     }
@@ -8417,7 +8449,7 @@ uint32 Unit::GetCreatePowers(Powers power) const
 
 void Unit::AddToWorld()
 {
-    Object::AddToWorld();
+    WorldObject::AddToWorld();
     ScheduleAINotify(0);
 }
 
@@ -8465,7 +8497,7 @@ CharmInfo* Unit::InitCharmInfo(Unit* charm)
 
 CharmInfo::CharmInfo(Unit* unit) :
     m_unit(unit), m_ai(nullptr), m_combatData(nullptr),
-    m_CommandState(COMMAND_FOLLOW), m_reactState(REACT_PASSIVE),
+    m_CommandState(COMMAND_FOLLOW),
     m_petnumber(0), m_retreating(false), m_stayPosSet(false),
     m_stayPosX(0), m_stayPosY(0), m_stayPosZ(0), m_stayPosO(0),
     m_opener(0), m_openerMinRange(0), m_openerMaxRange(0),
@@ -10109,7 +10141,9 @@ bool Unit::TakePossessOf(Unit* possessed)
         player->UnsummonPetTemporaryIfAny();
 
         charmInfo->InitPossessCreateSpells();
-        charmInfo->SetReactState(REACT_PASSIVE);
+        // may not always have AI, when posessing a player for example
+        if(possessed->AI())
+            possessed->AI()->SetReactState(REACT_PASSIVE);
         charmInfo->SetCommandState(COMMAND_STAY);
         player->PossessSpellInitialize();
     }
@@ -10154,7 +10188,7 @@ bool Unit::TakeCharmOf(Unit* charmed)
         //charmedPlayer->SetWalk(IsWalking(), true);
 
         charmInfo->InitCharmCreateSpells();
-        charmInfo->SetReactState(REACT_DEFENSIVE);
+        charmed->AI()->SetReactState(REACT_DEFENSIVE);
         charmInfo->SetCommandState(COMMAND_FOLLOW);
         charmInfo->SetIsRetreating(true);
 
@@ -10170,7 +10204,7 @@ bool Unit::TakeCharmOf(Unit* charmed)
         charmedCreature->SetWalk(IsWalking(), true);
 
         charmInfo->InitCharmCreateSpells();
-        charmInfo->SetReactState(REACT_DEFENSIVE);
+        charmed->AI()->SetReactState(REACT_DEFENSIVE);
         charmInfo->SetCommandState(COMMAND_FOLLOW);
         charmInfo->SetIsRetreating(true);
 

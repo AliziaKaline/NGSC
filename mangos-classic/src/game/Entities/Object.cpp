@@ -914,9 +914,9 @@ void Object::ForceValuesUpdateAtIndex(uint32 index)
 }
 
 WorldObject::WorldObject() :
-    m_currMap(nullptr),
-    m_mapId(0), m_InstanceId(0),
-    m_isActiveObject(false)
+    m_isOnEventNotified(false),
+    m_currMap(nullptr), m_mapId(0),
+    m_InstanceId(0), m_isActiveObject(false)
 {
 }
 
@@ -1203,7 +1203,7 @@ bool WorldObject::HasInArc(const WorldObject* target, float arc /*= M_PI*/) cons
     if (target == this)
         return true;
 
-// move arc to range 0.. 2*pi
+    // move arc to range 0.. 2*pi
     arc = MapManager::NormalizeOrientation(arc);
 
     float angle = GetAngle(target);
@@ -1544,6 +1544,22 @@ void WorldObject::SetMap(Map* map)
     // lets save current map's Id/instanceId
     m_mapId = map->GetId();
     m_InstanceId = map->GetInstanceId();
+}
+
+void WorldObject::AddToWorld()
+{
+    if (m_isOnEventNotified)
+        m_currMap->AddToOnEventNotified(this);
+
+    Object::AddToWorld();
+}
+
+void WorldObject::RemoveFromWorld()
+{
+    if (m_isOnEventNotified)
+        m_currMap->RemoveFromOnEventNotified(this);
+
+    Object::RemoveFromWorld();
 }
 
 TerrainInfo const* WorldObject::GetTerrain() const
@@ -1936,6 +1952,22 @@ void WorldObject::SetActiveObjectState(bool active)
             GetMap()->AddToActive(this);
     }
     m_isActiveObject = active;
+}
+
+void WorldObject::SetNotifyOnEventState(bool state)
+{
+    if (state == m_isOnEventNotified)
+        return;
+
+    m_isOnEventNotified = state;
+
+    if (!IsInWorld())
+        return;
+
+    if (state)
+        GetMap()->AddToOnEventNotified(this);
+    else
+        GetMap()->RemoveFromOnEventNotified(this);
 }
 
 void WorldObject::AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration /*= 0*/, bool /*updateClient = false*/)

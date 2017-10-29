@@ -1293,7 +1293,7 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask, bool isReflected)
 
     if (realCaster && realCaster != unit)
     {
-        if (!realCaster->IsFriendlyTo(unit))
+        if (realCaster->CanAttack(unit))
         {
             // not break stealth by cast targeting
             if (!m_spellInfo->HasAttribute(SPELL_ATTR_EX_NOT_BREAK_STEALTH))
@@ -1324,7 +1324,7 @@ void Spell::DoSpellHitOnUnit(Unit* unit, uint32 effectMask, bool isReflected)
                 realCaster->SetInCombatWithVictim(unit);
             }
         }
-        else
+        else if(realCaster->CanCooperate(unit))
         {
             // assisting case, healing and resurrection
             if (unit->isInCombat() && !m_spellInfo->HasAttribute(SPELL_ATTR_EX3_NO_INITIAL_AGGRO))
@@ -2118,12 +2118,12 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
                 UnitList tempTargetUnitMap;
 
-                FillAreaTargets(tempTargetUnitMap, max_range, PUSH_SELF_CENTER, SPELL_TARGETS_FRIENDLY);
+                FillAreaTargets(tempTargetUnitMap, max_range, PUSH_SELF_CENTER, SPELL_TARGETS_AOE_DAMAGE);
 
                 if (m_caster != pUnitTarget && std::find(tempTargetUnitMap.begin(), tempTargetUnitMap.end(), m_caster) == tempTargetUnitMap.end())
                     tempTargetUnitMap.push_front(m_caster);
 
-                tempTargetUnitMap.sort(TargetDistanceOrderNear(pUnitTarget));
+                tempTargetUnitMap.sort(LowestHPNearestOrder(pUnitTarget));
 
                 if (tempTargetUnitMap.empty())
                     break;
@@ -2139,7 +2139,10 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                 while (t && next != tempTargetUnitMap.end())
                 {
                     if (!prev->IsWithinDist(*next, CHAIN_SPELL_JUMP_RADIUS))
-                        break;
+                    {
+                        ++next;
+                        continue;
+                    }
 
                     if (!prev->IsWithinLOSInMap(*next))
                     {
@@ -2156,7 +2159,7 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     prev = *next;
                     targetUnitMap.push_back(prev);
                     tempTargetUnitMap.erase(next);
-                    tempTargetUnitMap.sort(TargetDistanceOrderNear(prev));
+                    tempTargetUnitMap.sort(LowestHPNearestOrder(prev));
                     next = tempTargetUnitMap.begin();
 
                     --t;
@@ -4077,7 +4080,7 @@ SpellCastResult Spell::CheckCast(bool strict)
     // following code block is supposed to be applied to single target spell
     // TODO: above assumption need to be verified
     Unit* singleTarget = m_targets.getUnitTarget();
-    if (singleTarget && IsSingleTargetSpell(m_spellInfo))
+    if (singleTarget && sSpellMgr.IsSingleTargetSpell(m_spellInfo))
     {
         // Swiftmend
         if (m_spellInfo->Id == 18562)                       // future versions have special aura state for this
@@ -5311,9 +5314,6 @@ SpellCastResult Spell::CheckPetCast(Unit* target)
             }
             else
             {
-                if (!_target->isTargetableForAttack())
-                    return SPELL_FAILED_BAD_TARGETS;            // guessed error
-
                 bool duelvsplayertar = false;
                 for (int j = 0; j < MAX_EFFECT_INDEX; ++j)
                 {

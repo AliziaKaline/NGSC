@@ -733,18 +733,16 @@ class CreatureEventAI : public CreatureAI
         void JustDied(Unit* killer) override;
         void KilledUnit(Unit* victim) override;
         void JustSummoned(Creature* pUnit) override;
-        void AttackStart(Unit* who) override;
+        // void AttackStart(Unit* who) override;
         void MoveInLineOfSight(Unit* who) override;
         void SpellHit(Unit* pUnit, const SpellEntry* pSpell) override;
         void DamageTaken(Unit* done_by, uint32& damage, DamageEffectType damagetype) override;
         void HealedBy(Unit* healer, uint32& healedAmount) override;
         void UpdateAI(const uint32 diff) override;
-        bool IsVisible(Unit*) const override;
         void ReceiveEmote(Player* pPlayer, uint32 text_emote) override;
         void SummonedCreatureJustDied(Creature* unit) override;
         void SummonedCreatureDespawn(Creature* unit) override;
         void ReceiveAIEvent(AIEventType eventType, Creature* pSender, Unit* pInvoker, uint32 miscValue) override;
-        bool IsControllable() const override { return true; }
 
         static int Permissible(const Creature*);
 
@@ -757,7 +755,6 @@ class CreatureEventAI : public CreatureAI
 
         bool SpawnedEventConditionsCheck(CreatureEventAI_Event const& event) const;
 
-        Unit* DoSelectLowestHpFriendly(float range, uint32 MinHPDiff) const;
         void DoFindFriendlyMissingBuff(std::list<Creature*>& _list, float range, uint32 spellid) const;
         void DoFindFriendlyCC(std::list<Creature*>& _list, float range) const;
 
@@ -772,7 +769,6 @@ class CreatureEventAI : public CreatureAI
         CreatureEventAIList m_CreatureEventAIList;          // Holder for events (stores enabled, time, and eventid)
 
         uint8  m_Phase;                                     // Current phase, max 32 phases
-        bool   m_MeleeEnabled;                              // If we allow melee auto attack
         bool   m_DynamicMovement;                           // Core will control creatures movement if this is enabled
         bool   m_HasOOCLoSEvent;                            // Cache if a OOC-LoS Event exists
         uint32 m_InvinceabilityHpLevel;                     // Minimal health level allowed at damage apply
@@ -782,8 +778,6 @@ class CreatureEventAI : public CreatureAI
         // Steps 0..2 correspond to AI_EVENT_LOST_SOME_HEALTH(90%), AI_EVENT_LOST_HEALTH(50%), AI_EVENT_CRITICAL_HEALTH(10%)
         uint32 m_throwAIEventStep;                          // Used for damage taken/ received heal
         float m_LastSpellMaxRange;                          // Maximum spell range that was cast during dynamic movement
-
-        ReactStates m_reactState;                           // Define if creature is passive or aggressive
 
         Unit* m_eventTarget;                                // Target filled on specific event to be used in action
 };

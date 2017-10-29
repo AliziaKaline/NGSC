@@ -50,14 +50,21 @@ int CreatureEventAI::Permissible(const Creature* creature)
 {
     if (creature->GetAIName() == "EventAI")
         return PERMIT_BASE_SPECIAL;
+
+    if (creature->IsCivilian() || creature->IsNeutralToAll())
+        return PERMIT_BASE_REACTIVE;
+
+    if (!creature->IsCivilian() && !creature->IsNeutralToAll())
+        return PERMIT_BASE_PROACTIVE;
+
     return PERMIT_BASE_NO;
 }
 
 void CreatureEventAI::GetAIInformation(ChatHandler& reader)
 {
     reader.PSendSysMessage(LANG_NPC_EVENTAI_PHASE, uint32(m_Phase));
-    reader.PSendSysMessage(LANG_NPC_EVENTAI_MOVE, reader.GetOnOffStr(m_isCombatMovement));
-    reader.PSendSysMessage(LANG_NPC_EVENTAI_COMBAT, reader.GetOnOffStr(m_MeleeEnabled));
+    reader.PSendSysMessage(LANG_NPC_EVENTAI_MOVE, reader.GetOnOffStr(!m_creature->hasUnitState(UNIT_STAT_NO_COMBAT_MOVEMENT)));
+    reader.PSendSysMessage(LANG_NPC_EVENTAI_COMBAT, reader.GetOnOffStr(m_meleeEnabled));
 
     if (sLog.HasLogFilter(LOG_FILTER_EVENT_AI_DEV))         // Give some more details if in EventAI Dev Mode
         return;
@@ -76,14 +83,12 @@ void CreatureEventAI::GetAIInformation(ChatHandler& reader)
 
 CreatureEventAI::CreatureEventAI(Creature* c) : CreatureAI(c),
     m_Phase(0),
-    m_MeleeEnabled(true),
     m_DynamicMovement(false),
     m_HasOOCLoSEvent(false),
     m_InvinceabilityHpLevel(0),
     m_throwAIEventMask(0),
     m_throwAIEventStep(0),
-    m_LastSpellMaxRange(0),
-    m_reactState(REACT_AGGRESSIVE)
+    m_LastSpellMaxRange(0)
 {
     // Need make copy for filter unneeded steps and safe in case table reload
     CreatureEventAI_Event_Map::const_iterator creatureEventsItr = sEventAIMgr.GetCreatureEventAIMap().find(m_creature->GetEntry());
@@ -297,7 +302,7 @@ bool CreatureEventAI::ProcessEvent(CreatureEventAIHolder& pHolder, Unit* pAction
             if (!m_creature->isInCombat())
                 return false;
 
-            Unit* pUnit = DoSelectLowestHpFriendly((float)event.friendly_hp.radius, event.friendly_hp.hpDeficit);
+            Unit* pUnit = DoSelectLowestHpFriendly(float(event.friendly_hp.radius), float(event.friendly_hp.hpDeficit), false);
             if (!pUnit)
                 return false;
 
@@ -806,7 +811,7 @@ void CreatureEventAI::ProcessAction(CreatureEventAI_Action const& action, uint32
                 sLog.outErrorEventAI("Event %u - nullptr target for ACTION_T_REMOVE_UNIT_FLAG(%u), target-type %u", EventId, action.type, action.unit_flag.target);
             break;
         case ACTION_T_AUTO_ATTACK:
-            m_MeleeEnabled = action.auto_attack.state != 0;
+            m_meleeEnabled = action.auto_attack.state != 0;
             break;
         case ACTION_T_COMBAT_MOVEMENT:
             // ignore no affect case
@@ -1264,15 +1269,7 @@ void CreatureEventAI::EnterEvadeMode()
         SetCombatMovement(!m_DynamicMovement);
     }
 
-    m_creature->RemoveAllAurasOnEvade();
-    m_creature->DeleteThreatList();
-    m_creature->CombatStop(true);
-
-    // only alive creatures that are not on transport can return to home position
-    if (m_creature->isAlive())
-        m_creature->GetMotionMaster()->MoveTargetedHome();
-
-    m_creature->SetLootRecipient(nullptr);
+    CreatureAI::EnterEvadeMode();
 
     // Handle Evade events
     for (CreatureEventAIList::iterator i = m_CreatureEventAIList.begin(); i != m_CreatureEventAIList.end(); ++i)
@@ -1387,28 +1384,12 @@ void CreatureEventAI::EnterCombat(Unit* enemy)
 
     m_EventUpdateTime = EVENT_UPDATE_TIME;
     m_EventDiff = 0;
-}
 
-void CreatureEventAI::AttackStart(Unit* who)
-{
-    if (!who || m_reactState == REACT_PASSIVE)
-        return;
-
-    if (m_creature->Attack(who, m_MeleeEnabled))
-    {
-        m_creature->AddThreat(who);
-        m_creature->SetInCombatWith(who);
-        who->SetInCombatWith(m_creature);
-
-        HandleMovementOnAttackStart(who);
-    }
+    CreatureAI::EnterCombat(enemy);
 }
 
 void CreatureEventAI::MoveInLineOfSight(Unit* who)
 {
-    if (!who || m_reactState != REACT_AGGRESSIVE)
-        return;
-
     // Check for OOC LOS Event
     if (m_HasOOCLoSEvent && !m_creature->getVictim())
     {
@@ -1420,8 +1401,8 @@ void CreatureEventAI::MoveInLineOfSight(Unit* who)
                 float fMaxAllowedRange = (float)itr->Event.ooc_los.maxRange;
 
                 // if friendly event && who is not hostile OR hostile event && who is hostile
-                if ((itr->Event.ooc_los.noHostile && !m_creature->IsHostileTo(who)) ||
-                        ((!itr->Event.ooc_los.noHostile) && m_creature->IsHostileTo(who)))
+                if ((itr->Event.ooc_los.noHostile && !m_creature->IsEnemy(who)) ||
+                    ((!itr->Event.ooc_los.noHostile) && m_creature->IsEnemy(who)))
                 {
                     // if range is ok and we are actually in LOS
                     if (m_creature->IsWithinDistInMap(who, fMaxAllowedRange) && m_creature->IsWithinLOSInMap(who))
@@ -1431,28 +1412,7 @@ void CreatureEventAI::MoveInLineOfSight(Unit* who)
         }
     }
 
-    // TODO:: in others core -> if (m_creature->IsCivilian() || m_creature->IsNeutralToAll()) so why we use EXTRA_FLAG here ?
-    if ((m_creature->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_AGGRO) || m_creature->IsNeutralToAll())
-        return;
-
-    if (m_creature->CanInitiateAttack() && who->isTargetableForAttack() &&
-            m_creature->IsHostileTo(who) && who->isInAccessablePlaceFor(m_creature))
-    {
-        if (!m_creature->CanFly() && m_creature->GetDistanceZ(who) > CREATURE_Z_ATTACK_RANGE)
-            return;
-
-        float attackRadius = m_creature->GetAttackDistance(who);
-        if (m_creature->IsWithinDistInMap(who, attackRadius) && m_creature->IsWithinLOSInMap(who))
-        {
-            if (!m_creature->getVictim())
-                AttackStart(who);
-            else if (m_creature->GetMap()->IsDungeon())
-            {
-                m_creature->AddThreat(who);
-                who->SetInCombatWith(m_creature);
-            }
-        }
-    }
+    CreatureAI::MoveInLineOfSight(who);
 }
 
 void CreatureEventAI::SpellHit(Unit* pUnit, const SpellEntry* pSpell)
@@ -1529,16 +1489,9 @@ void CreatureEventAI::UpdateAI(const uint32 diff)
             else
                 SetCombatMovement(true, true);
         }
-        else if (m_MeleeEnabled && m_creature->CanReachWithMeleeAttack(victim)
-            && !(m_creature->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_MELEE))
+        else if (m_meleeEnabled && !(m_creature->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_MELEE))
             DoMeleeAttackIfReady();
     }
-}
-
-bool CreatureEventAI::IsVisible(Unit* pl) const
-{
-    return m_creature->IsWithinDist(pl, sWorld.getConfig(CONFIG_FLOAT_SIGHT_MONSTER))
-           && pl->isVisibleForOrDetect(m_creature, m_creature, true);
 }
 
 inline uint32 CreatureEventAI::GetRandActionParam(uint32 rnd, uint32 param1, uint32 param2, uint32 param3) const
@@ -1654,21 +1607,6 @@ inline Unit* CreatureEventAI::GetTargetByType(uint32 Target, Unit* pActionInvoke
             isError = true;
             return nullptr;
     };
-}
-
-Unit* CreatureEventAI::DoSelectLowestHpFriendly(float range, uint32 MinHPDiff) const
-{
-    Unit* pUnit = nullptr;
-
-    MaNGOS::MostHPMissingInRangeCheck u_check(m_creature, range, MinHPDiff);
-    MaNGOS::UnitLastSearcher<MaNGOS::MostHPMissingInRangeCheck> searcher(pUnit, u_check);
-
-    /*
-    typedef TYPELIST_4(GameObject, Creature*except pets*, DynamicObject, Corpse*Bones*) AllGridObjectTypes;
-    This means that if we only search grid then we cannot possibly return pets or players so this is safe
-    */
-    Cell::VisitGridObjects(m_creature, searcher, range);
-    return pUnit;
 }
 
 void CreatureEventAI::DoFindFriendlyCC(std::list<Creature*>& _list, float range) const

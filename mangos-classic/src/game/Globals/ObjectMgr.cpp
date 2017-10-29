@@ -4649,7 +4649,7 @@ void ObjectMgr::LoadQuestgiverGreetingLocales()
                         var.localeText.resize(idx + 1);
 
                     var.localeText[idx] = str;
-        }
+                }
             }
         }
 
@@ -7396,6 +7396,8 @@ bool PlayerCondition::Meets(Player const* player, Map const* map, WorldObject co
 
             return !!creature;
         }
+        case CONDITION_SPAWN_COUNT:
+            return source->GetMap()->SpawnedCountForEntry(m_value1) >= m_value2;
         default:
             return false;
     }

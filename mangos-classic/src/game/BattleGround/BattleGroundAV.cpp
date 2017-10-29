@@ -278,9 +278,8 @@ void BattleGroundAV::HandleQuestComplete(uint32 questid, Player* player, Object*
 				}
             }
             break;
-		// We need to implement each event individualy.
-        case BG_AV_QUEST_A_RIDER_TAME:			// 7 ram places.
-        case BG_AV_QUEST_H_RIDER_TAME:			// 8 wolfes places.
+        case BG_AV_QUEST_A_RIDER_TAME:
+        case BG_AV_QUEST_H_RIDER_TAME:
 			m_Team_QuestStatus[teamIdx][8]++;
 			reputation = 1;
 			if (npc->getFaction() == 1216) // Alliance

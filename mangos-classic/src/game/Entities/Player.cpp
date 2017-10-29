@@ -2080,20 +2080,11 @@ Creature* Player::GetNPCIfCanInteractWith(ObjectGuid guid, uint32 npcflagmask)
             return nullptr;
     }
 
-    // if a dead unit should be able to talk - the creature must be alive and have special flags
-    if (!unit->isAlive())
+    if (!CanInteractNow(unit))
         return nullptr;
 
     if (isAlive() && unit->isInvisibleForAlive())
-        return nullptr;
-
-    // not allow interaction under control, but allow with own pets
-    if (unit->GetCharmerGuid())
-        return nullptr;
-
-    // not enemy
-    if (unit->IsHostileTo(this))
-        return nullptr;
+		return nullptr;
 
     // not too far
     if (!unit->IsWithinDistInMap(this, INTERACTION_DISTANCE))
@@ -4271,6 +4262,10 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     m_camera.UpdateVisibilityForOwner();
     // update visibility of player for nearby cameras
     UpdateObjectVisibility();
+
+    if (IsInWorld())
+        if (InstanceData* data = GetMap()->GetInstanceData())
+            data->OnPlayerResurrect(this);
 
     if (!applySickness)
         return;
@@ -13247,7 +13242,7 @@ void Player::SendQuestGiverStatusMultiple() const
             // need also pet quests case support
             Creature* questgiver = GetMap()->GetAnyTypeCreature(*itr);
 
-            if (!questgiver || questgiver->IsHostileTo(this))
+            if (!questgiver || !CanInteract(questgiver))
                 continue;
 
             if (!questgiver->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_QUESTGIVER))
@@ -15855,7 +15850,7 @@ void Player::PetSpellInitialize() const
     WorldPacket data(SMSG_PET_SPELLS, 8 + 4 + 1 + 1 + 2 + 4 * MAX_UNIT_ACTION_BAR_INDEX + 1 + 1);
     data << pet->GetObjectGuid();
     data << uint32(0);
-    data << uint8(charmInfo->GetReactState()) << uint8(charmInfo->GetCommandState()) << uint16(0);
+    data << uint8(pet->AI()->GetReactState()) << uint8(charmInfo->GetCommandState()) << uint16(0);
 
     // action bar loop
     charmInfo->BuildActionBar(data);
@@ -15979,7 +15974,7 @@ void Player::CharmSpellInitialize() const
     WorldPacket data(SMSG_PET_SPELLS, 8 + 4 + 1 + 1 + 2 + 4 * MAX_UNIT_ACTION_BAR_INDEX + 1 + 4 * addlist + 1);
     data << charm->GetObjectGuid();
     data << uint32(0x00000000);
-    data << uint8(charmInfo->GetReactState()) << uint8(charmInfo->GetCommandState()) << uint16(0);
+    data << uint8(charm->AI()->GetReactState()) << uint8(charmInfo->GetCommandState()) << uint16(0);
 
     charmInfo->BuildActionBar(data);
 
@@ -18161,7 +18156,7 @@ Player* Player::GetNextRandomRaidMember(float radius)
 
         // IsHostileTo check duel and controlled by enemy
         if (Target && Target != this && IsWithinDistInMap(Target, radius) &&
-                !Target->HasInvisibilityAura() && !IsHostileTo(Target))
+                !Target->HasInvisibilityAura() && CanAssist(Target))
             nearMembers.push_back(Target);
     }
 

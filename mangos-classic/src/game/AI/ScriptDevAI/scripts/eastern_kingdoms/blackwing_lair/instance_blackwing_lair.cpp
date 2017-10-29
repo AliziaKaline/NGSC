@@ -32,7 +32,8 @@ instance_blackwing_lair::instance_blackwing_lair(Map* pMap) : ScriptedInstance(p
     m_uiScepterEpicTimer(0),
     m_uiScepterQuestStep(0),
     m_uiDragonspawnCount(0),
-    m_uiBlackwingDefCount(0)
+    m_uiBlackwingDefCount(0),
+    m_bIsMainGateOpen(true)
 {
     Initialize();
 }
@@ -76,7 +77,7 @@ void instance_blackwing_lair::OnCreatureCreate(Creature* pCreature)
         case NPC_BLACKWING_ORB_TRIGGER:
         case NPC_VAELASTRASZ:
         case NPC_LORD_VICTOR_NEFARIUS:
-            m_mNpcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
+            m_npcEntryGuidStore[pCreature->GetEntry()] = pCreature->GetObjectGuid();
             break;
     }
 }
@@ -111,21 +112,47 @@ void instance_blackwing_lair::OnObjectCreate(GameObject* pGo)
         case GO_DRAKONID_BONES:
             m_lDrakonidBonesGuids.push_back(pGo->GetObjectGuid());
             return;
+        case GO_SUPPRESSION_DEVICE:
+            // Do not spawn the Suppression Device GOs if Broodlord Lashlayer is dead
+            if (GetData(TYPE_LASHLAYER) == DONE)
+                pGo->SetLootState(GO_JUST_DEACTIVATED);
+            return;
 
         default:
             return;
     }
-    m_mGoEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
+    m_goEntryGuidStore[pGo->GetEntry()] = pGo->GetObjectGuid();
 }
 
 void instance_blackwing_lair::SetData(uint32 uiType, uint32 uiData)
 {
+    // Close de the main gate whenever an event starts (if it is not already open)
+    if (m_bIsMainGateOpen && (uiData == IN_PROGRESS || uiData == SPECIAL))
+    {
+        DoUseDoorOrButton(GO_DOOR_RAZORGORE_ENTER);
+        m_bIsMainGateOpen = false;
+    }
+    // If an encounter is failed or won, open the main gate only if it is currently closed and no other event is in progress
+    else if (!m_bIsMainGateOpen && (uiData == FAIL || uiData == DONE))
+    {
+        bool ShouldKeepGateClosed = false;
+        for (uint8 i = 0; i < TYPE_NEFARIAN; i++)
+        {
+            if (uiType != i && (m_auiEncounter[i] == IN_PROGRESS || m_auiEncounter[i] == SPECIAL))
+                ShouldKeepGateClosed = true;
+        }
+
+        if (!ShouldKeepGateClosed)
+        {
+            DoUseDoorOrButton(GO_DOOR_RAZORGORE_ENTER);
+            m_bIsMainGateOpen = true;
+        }
+    }
+
     switch (uiType)
     {
         case TYPE_RAZORGORE:
             m_auiEncounter[uiType] = uiData;
-            if (uiData != SPECIAL)
-                DoUseDoorOrButton(GO_DOOR_RAZORGORE_ENTER);
             if (uiData == DONE)
                 DoUseDoorOrButton(GO_DOOR_RAZORGORE_EXIT);
             else if (uiData == FAIL)
@@ -360,7 +387,11 @@ void instance_blackwing_lair::OnCreatureDeath(Creature* pCreature)
                     pRazorgore->ForcedDespawn();
                 }
                 if (Creature* pOrbTrigger = GetSingleCreatureFromStorage(NPC_BLACKWING_ORB_TRIGGER))
+                {
+                    if (Creature* pTemp = pOrbTrigger->SummonCreature(NPC_ORB_DOMINATION, pOrbTrigger->GetPositionX(), pOrbTrigger->GetPositionY(), pOrbTrigger->GetPositionZ(), 0, TEMPSPAWN_TIMED_DESPAWN, 5 * IN_MILLISECONDS))
+                        DoScriptText(EMOTE_ORB_SHUT_OFF, pTemp);
                     pOrbTrigger->CastSpell(pOrbTrigger, SPELL_EXPLODE_ORB, TRIGGERED_IGNORE_UNATTACKABLE_FLAG);
+                }
             }
             break;
         case NPC_BLACKWING_LEGIONNAIRE:
@@ -529,6 +560,41 @@ InstanceData* GetInstanceData_instance_blackwing_lair(Map* pMap)
     return new instance_blackwing_lair(pMap);
 }
 
+/*###############
+## go_suppression
+################*/
+
+struct go_ai_suppression : public GameObjectAI
+{
+    go_ai_suppression (GameObject* go) : GameObjectAI(go), m_uiFumeTimer(urand(0, 5 * IN_MILLISECONDS)) {}
+
+    uint32 m_uiFumeTimer;
+
+    // Visual effects for each GO is played on a 5 seconds timer. Sniff show that the GO should also be used (trap spell is cast)
+    // but we need core support for GO casting for that
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        if (m_uiFumeTimer)
+        {
+            if (m_uiFumeTimer <= uiDiff)
+            {
+                // TODO replace by go->Use(go) or go->Use(nullptr) once GO casting is added in core
+                // The loot state check may be removed in that case because it should probably be handled in the Gameobject::Use() code
+                if (m_go->getLootState() == GO_READY)
+                    m_go->SendGameObjectCustomAnim(m_go->GetObjectGuid());
+                m_uiFumeTimer = 5 * IN_MILLISECONDS;
+            }
+            else
+                m_uiFumeTimer -= uiDiff;
+        }
+    }
+};
+
+GameObjectAI* GetAI_go_suppression(GameObject* go)
+{
+    return new go_ai_suppression (go);
+}
+
 void AddSC_instance_blackwing_lair()
 {
     Script* pNewScript;
@@ -536,5 +602,10 @@ void AddSC_instance_blackwing_lair()
     pNewScript = new Script;
     pNewScript->Name = "instance_blackwing_lair";
     pNewScript->GetInstanceData = &GetInstanceData_instance_blackwing_lair;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "go_suppression";
+    pNewScript->GetGameObjectAI = &GetAI_go_suppression;
     pNewScript->RegisterSelf();
 }

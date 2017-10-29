@@ -103,7 +103,7 @@ void WorldSession::HandlePetAction(WorldPacket& recv_data)
                 {
                     Unit* targetUnit = targetGuid ? _player->GetMap()->GetUnit(targetGuid) : nullptr;
 
-                    if (targetUnit && targetUnit != petUnit && targetUnit->isTargetableForAttack())
+                    if (targetUnit && targetUnit != petUnit && petUnit->CanAttack(targetUnit))
                     {
                         // This is true if pet has no target or has target but targets differs.
                         if (petUnit->getVictim() != targetUnit)
@@ -221,7 +221,7 @@ void WorldSession::HandlePetAction(WorldPacket& recv_data)
                 case REACT_DEFENSIVE:                       // recovery
                 case REACT_AGGRESSIVE:                      // activete
                 {
-                    charmInfo->SetReactState(ReactStates(spellid));
+                    petUnit->AI()->SetReactState(ReactStates(spellid));
                     break;
                 }
             }
@@ -265,6 +265,7 @@ void WorldSession::HandlePetAction(WorldPacket& recv_data)
             Spell* spell = new Spell(petUnit, spellInfo, false);
 
             SpellCastResult result = spell->CheckPetCast(unit_target);
+
 			const SpellRangeEntry* sRange = sSpellRangeStore.LookupEntry(spellInfo->rangeIndex);
 
             if (unit_target && !(petUnit->IsWithinDistInMap(unit_target, sRange->maxRange) && petUnit->IsWithinLOSInMap(unit_target))
@@ -322,8 +323,7 @@ void WorldSession::HandlePetAction(WorldPacket& recv_data)
             }
             else
             {
-
-                if (petUnit->hasUnitState(UNIT_STAT_POSSESSED))
+				if (petUnit->hasUnitState(UNIT_STAT_POSSESSED))
                     Spell::SendCastResult(GetPlayer(), spellInfo, result);
                 else
                 {

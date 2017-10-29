@@ -500,7 +500,7 @@ enum UnitFlags
     UNIT_FLAG_PVP                   = 0x00001000,
     UNIT_FLAG_SILENCED              = 0x00002000,           // silenced, 2.1.1
     UNIT_FLAG_PERSUADED             = 0x00004000,           // persuaded, 2.0.8
-    UNIT_FLAG_UNK_15                = 0x00008000,           // related to jerky movement in water?
+    UNIT_FLAG_SWIMMING              = 0x00008000,           // related to jerky movement in water?
     UNIT_FLAG_UNK_16                = 0x00010000,           // removes attackable icon
     UNIT_FLAG_PACIFIED              = 0x00020000,
     UNIT_FLAG_DISABLE_ROTATE        = 0x00040000,
@@ -894,13 +894,6 @@ enum ActiveStates
     ACT_DECIDE   = 0x00                                     // custom
 };
 
-enum ReactStates
-{
-    REACT_PASSIVE    = 0,
-    REACT_DEFENSIVE  = 1,
-    REACT_AGGRESSIVE = 2
-};
-
 enum CommandStates
 {
     COMMAND_STAY    = 0,
@@ -971,9 +964,6 @@ class CharmInfo
         void SetCommandState(CommandStates st);
         CommandStates GetCommandState() { return m_CommandState; }
         bool HasCommandState(CommandStates state) { return (m_CommandState == state); }
-        void SetReactState(ReactStates st) { m_reactState = st; }
-        ReactStates GetReactState() const { return m_reactState; }
-        bool HasReactState(ReactStates state) const { return (m_reactState == state); }
 
         void InitPossessCreateSpells();
         void InitCharmCreateSpells();
@@ -1028,7 +1018,6 @@ class CharmInfo
         UnitActionBarEntry  PetActionBar[MAX_UNIT_ACTION_BAR_INDEX];
         CharmSpellEntry     m_charmspells[CREATURE_MAX_SPELLS];
         CommandStates       m_CommandState;
-        ReactStates         m_reactState;
         uint32              m_petnumber;
         uint32              m_opener;
         uint32              m_openerMinRange;
@@ -1396,6 +1385,12 @@ class Unit : public WorldObject
         bool IsImmuneToPlayer() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER); }
         void SetImmuneToPlayer(bool state);
 
+        // extensions of CanAttack and CanAssist API needed serverside
+        virtual bool CanAttackSpell(Unit* target, SpellEntry const* spellInfo = nullptr, bool isAOE = false) const override;
+        virtual bool CanAssistSpell(Unit* target, SpellEntry const* spellInfo = nullptr) const override;
+
+        virtual bool CanAttackOnSight(Unit* target); // Used in MoveInLineOfSight checks
+
         bool IsPvP() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PVP); }
         void SetPvP(bool state);
         bool IsPvPFreeForAll() const;
@@ -1588,6 +1583,8 @@ class Unit : public WorldObject
             return m_spellAuraHolders.equal_range(spell_id);
         }
 
+        uint32 GetAuraCount(uint32 spellId) const;
+
         bool HasAuraType(AuraType auraType) const;
         bool HasAffectedAura(AuraType auraType, SpellEntry const* spellProto) const;
         bool HasAura(uint32 spellId, SpellEffectIndex effIndex) const;
@@ -1605,9 +1602,6 @@ class Unit : public WorldObject
         bool IsPolymorphed() const;
 
         bool isFrozen() const;
-
-        bool isTargetableForAttack(bool inversAlive = false) const;
-        bool isPassiveToHostile() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC); }
 
         virtual bool IsInWater() const;
         virtual bool IsUnderWater() const;
@@ -1906,6 +1900,7 @@ class Unit : public WorldObject
         // common function for visibility checks for player/creatures with detection code
         bool isVisibleForOrDetect(Unit const* u, WorldObject const* viewPoint, bool detect, bool inVisibleList = false, bool is3dDistance = true) const;
         bool canDetectInvisibilityOf(Unit const* u) const;
+        float GetVisibleDist(Unit const* u);
 
         // virtual functions for all world objects types
         bool isVisibleForInState(Player const* u, WorldObject const* viewPoint, bool inVisibleList) const override;
@@ -2138,6 +2133,8 @@ class Unit : public WorldObject
 
         void ForceHealthAndPowerUpdate();   // force server to send new value for hp and power (including max)
 
+        void TriggerEvadeEvents();
+
         // Take possession of an unit (pet, creature, ...)
         bool TakePossessOf(Unit* possessed);
 
@@ -2361,6 +2358,20 @@ struct TargetDistanceOrderFarAway : public std::binary_function<Unit const, Unit
     bool operator()(Unit const* _Left, Unit const* _Right) const
     {
         return !m_mainTarget->GetDistanceOrder(_Left, _Right);
+    }
+};
+
+struct LowestHPNearestOrder : public std::binary_function<Unit const, Unit const, bool>
+{
+    Unit const* m_mainTarget;
+    LowestHPNearestOrder(Unit const* target) : m_mainTarget(target) {}
+    // functor for operator ">"
+    bool operator()(Unit const* _Left, Unit const* _Right) const
+    {
+        if (_Left->GetHealthPercent() == _Right->GetHealthPercent())
+            return m_mainTarget->GetDistanceOrder(_Left, _Right);
+        else
+            return _Left->GetHealthPercent() < _Right->GetHealthPercent();
     }
 };
 
